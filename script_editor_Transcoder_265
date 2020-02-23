@@ -1,0 +1,57 @@
+set FileLocation to choose file with prompt "Please select a document to process:"
+script getfile
+	on getPath(location)
+		set text item delimiters to ":"
+		set allparts to text items of location
+		set text item delimiters to "."
+		set FileName to (text items 1 thru -2 of last item of allparts) as string
+		set suffix to last item of text items of last item of allparts
+		set text item delimiters to ":"
+		set pathparts to (items 1 thru -2 of allparts) as string
+		return {POSIX path of pathparts, FileName, suffix}
+	end getPath
+	on bitrateoverride(nameoffile)
+		try
+			set text item delimiters to "!"
+			set file_name to second text item of nameoffile
+			set bit to first text item of nameoffile
+			return {bit, file_name}
+		on error
+			return {0, 0}
+		end try
+	end bitrateoverride
+end script
+tell application "Finder"
+	tell the item FileLocation
+		set posixpath to getfile's getPath(FileLocation as string)
+		set pathparts to first item of posixpath
+		set FileName to second item of posixpath
+		copy FileName to NewFileName
+		set suffix to last item of posixpath
+		set scriptsd to ("cd \"" & pathparts & "\"" & "; /usr/local/bin/ffprobe -i " & FileName & "." & suffix & " 2>&1 | grep bitrate | awk '{print $6}'") --working with h264 
+		set scriptsd_alter to ("cd \"" & pathparts & "\"" & "; /usr/local/bin/ffprobe -i " & FileName & "." & suffix & " 2>&1 | grep kb/s ")
+		--display dialog scriptsd
+		try
+			set bit to (paragraphs of (do shell script scriptsd)) as integer
+		on error
+			--display dialog scriptsd_alter
+			set unknow_bit to (paragraphs of (do shell script scriptsd_alter))
+			set bit to display dialog "Fail to detect bitrate" & unknow_bit default answer "" with icon note buttons {"Cancel", "Continue"} default button "Continue"
+		end try
+		--display dialog bit
+		if bit is less than 6000 then
+			copy bit * 0.8 to bitrate
+		else
+			copy 5000 to bitrate
+		end if
+		if first item of getfile's bitrateoverride(FileName) is not 0 then
+			copy first item of getfile's bitrateoverride(FileName) to bitrate
+			copy second item of getfile's bitrateoverride(FileName) to NewFileName
+		end if
+		set name to "original_" & FileName & "." & suffix
+		set scriptsd to ("cd \"" & pathparts & "\"" & "; /usr/local/bin/ffmpeg -i " & "original_" & FileName & "." & suffix & " -vcodec hevc_videotoolbox -tag:v hvc1 -vb " & (bitrate as string) & "k -y " & NewFileName & ".mp4")
+		do shell script scriptsd
+	end tell
+end tell
+
+
