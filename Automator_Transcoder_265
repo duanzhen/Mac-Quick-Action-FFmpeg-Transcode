@@ -1,5 +1,5 @@
 on run {input, parameters}
-	script getfile
+	script GetCmd
 		on getPath(location)
 			set text item delimiters to ":"
 			set allparts to text items of location
@@ -20,40 +20,50 @@ on run {input, parameters}
 				return {0, 0}
 			end try
 		end bitrateoverride
+		on GeneratCmd(FileLocation)
+			set posixpath to GetCmd's getPath(FileLocation as string)
+			set pathparts to first item of posixpath
+			set FileName to second item of posixpath
+			copy FileName to NewFileName
+			set suffix to last item of posixpath
+			set scriptsd to ("cd \"" & pathparts & "\"" & "; /usr/local/bin/ffprobe -i \"" & FileName & "." & suffix & "\" 2>&1 | grep bitrate | awk '{print $6}'") --working with h264 
+			--display dialog scriptsd
+			try
+				set bit to (paragraphs of (do shell script scriptsd)) as integer
+			on error
+				set scriptsd_alter to ("cd \"" & pathparts & "\"" & "; /usr/local/bin/ffprobe -i \"" & FileName & "." & suffix & "\" 2>&1 | grep kb/s ")
+				--display dialog scriptsd_alter
+				set unknow_bit to (paragraphs of (do shell script scriptsd_alter))
+				set bit to display dialog "Fail to detect bitrate" & unknow_bit default answer "" with icon note buttons {"Cancel", "Continue"} default button "Continue"
+			end try
+			--display dialog bit
+			if bit is less than 6000 then
+				copy bit * 0.8 to bitrate
+			else
+				copy 5000 to bitrate
+			end if
+			if first item of GetCmd's bitrateoverride(FileName) is not 0 then
+				copy first item of GetCmd's bitrateoverride(FileName) to bitrate
+				copy second item of GetCmd's bitrateoverride(FileName) to NewFileName
+			end if
+			display notification "Transcoding" with title FileName & "." & suffix & " Will Be Convert" subtitle "Bitrate: " & bit & " to " & bitrate sound name "Frog"
+			tell application "Finder"
+				tell the item FileLocation
+					set name to "original_" & FileName & "." & suffix
+				end tell
+			end tell
+			set TranscodeCmd to "cd \"" & pathparts & "\"" & "; /usr/local/bin/ffmpeg -i " & "\"original_" & FileName & "." & suffix & "\" -vcodec hevc_videotoolbox -tag:v hvc1 -vb " & (bitrate as string) & "k -y \"" & NewFileName & ".mp4\" 2> /tmp/progress"
+			return TranscodeCmd
+		end GeneratCmd
 	end script
 	repeat with a from 1 to length of input
 		tell application "Finder"
 			set FileLocation to item a of input
 			tell the item FileLocation
-				set posixpath to getfile's getPath(FileLocation as string)
-				set pathparts to first item of posixpath
-				set FileName to second item of posixpath
-				copy FileName to NewFileName
-				set suffix to last item of posixpath
-				set scriptsd to ("cd \"" & pathparts & "\"" & "; /usr/local/bin/ffprobe -i " & FileName & "." & suffix & " 2>&1 | grep bitrate | awk '{print $6}'") --working with h264 
-				set scriptsd_alter to ("cd \"" & pathparts & "\"" & "; /usr/local/bin/ffprobe -i " & FileName & "." & suffix & " 2>&1 | grep kb/s ")
-				--display dialog scriptsd
-				try
-					set bit to (paragraphs of (do shell script scriptsd)) as integer
-				on error
-					set unknow_bit to (paragraphs of (do shell script scriptsd_alter))
-					set bit to display dialog "Fail to detect bitrate" & unknow_bit default answer "" with icon note buttons {"Cancel", "Continue"} default button "Continue"
-				end try
-				--display dialog bit
-				if bit is less than 6000 then
-					copy bit * 0.8 to bitrate
-				else
-					copy 5000 to bitrate
-				end if
-				if first item of getfile's bitrateoverride(FileName) is not 0 then
-					copy first item of getfile's bitrateoverride(FileName) to bitrate
-					copy second item of getfile's bitrateoverride(FileName) to NewFileName
-				end if
-				set name to "original_" & FileName & "." & suffix
-				set scriptsd to ("cd \"" & pathparts & "\"" & "; /usr/local/bin/ffmpeg -i " & "original_" & FileName & "." & suffix & " -vcodec hevc_videotoolbox -tag:v hvc1 -vb " & (bitrate as string) & "k -y " & NewFileName & ".mp4")
-				do shell script scriptsd
+				do shell script GetCmd's GeneratCmd(FileLocation)
 			end tell
 		end tell
 	end repeat
+	display notification " " with title "All Done" subtitle ((length of input) as string) & " videos " sound name "Frog"
 	return input
 end run
